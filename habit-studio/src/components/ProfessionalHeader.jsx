@@ -84,18 +84,6 @@ export default function ProfessionalHeader({ onNavigate, currentPage, forceShowA
         setShowIncorrectPassword(true);
         return;
       }
-            {/* Incorrect password modal */}
-            {showIncorrectPassword && (
-              <div className="modal-overlay" style={{zIndex:3000}}>
-                <div className="modal-content" style={{textAlign:'center',padding:'2.5rem 1.2rem', maxWidth:'340px', width:'90%'}}>
-                  <h2 style={{color:'var(--primary,#6366f1)',marginBottom:'1rem'}}>Incorrect Password</h2>
-                  <p style={{color:'var(--slate-700)',marginBottom:'1.5rem',fontSize:'1.1rem'}}>The password you entered is incorrect. Please try again.</p>
-                  <button className="btn-primary" style={{width:'100%'}} onClick={() => setShowIncorrectPassword(false)}>
-                    Try Again
-                  </button>
-                </div>
-              </div>
-            )}
       localStorage.setItem('user', JSON.stringify({ username: foundUser.username, email: authData.email }));
       setUser({ username: foundUser.username, email: authData.email });
       setShowAuthModal(false);

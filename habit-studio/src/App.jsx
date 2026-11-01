@@ -1,351 +1,42 @@
-import React, { useEffect, useState } from 'react'
-import AddHabit from './components/AddHabit';
-import HabitList from './components/HabitList';
-import ProfessionalHeader from './components/ProfessionalHeader'
-import Hero from './components/Hero'
-import Features from './components/Features'
-import Statistics from './pages/Statistics'
-import DashboardPage from './pages/DashboardPage'
-import DashboardAltPage from './pages/DashboardAltPage'
-import Onboarding from './components/Onboarding'
-import Testimonials from './components/Testimonials'
-import Pricing from './components/Pricing'
-import CTA from './components/CTA'
-import Footer from './components/Footer'
-import LoginModal from './components/LoginModal'
+import { useEffect, useMemo, useState } from 'react';
 
-import Profile from './components/Profile'
-import Account from './pages/Account'
-import Database from './pages/Database'
-import AboutUs from './pages/Option2'
-import AboutHabitStudio from './pages/Option3'
+const KEY = 'habit-studio-workspace-v2';
+const today = () => new Date().toISOString().slice(0, 10);
+const done = (value) => value === true || value === 1 || value === 'true';
+const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
+const dayLabel = (date) => new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(`${date}T12:00:00`));
+function initial() {
+  const saved = read(KEY, null); if (saved) return saved;
+  const user = read('user', null), tail = user?.email ? `_${user.email}` : '';
+  const habits = read(`habits${tail}`, []), logs = read(`logs${tail}`, {});
+  return { habits, logs, journal: [], migrated: Boolean(habits.length || Object.keys(logs).length) };
+}
+function streak(id, logs) { let total = 0, date = new Date(); while (done(logs[date.toISOString().slice(0, 10)]?.[id])) { total++; date.setDate(date.getDate() - 1); } return total; }
+function bestStreak(id, logs) { let best = 0, run = 0; Object.keys(logs).sort().forEach((date) => { run = done(logs[date]?.[id]) ? run + 1 : 0; best = Math.max(best, run); }); return best; }
 
-const dateKey = (d = new Date()) => d.toISOString().slice(0,10);
-function getCurrentUser() {
-  try {
-    const user = JSON.parse(localStorage.getItem('user'));
-    return user && user.email ? user.email : null;
-  } catch {
-    return null;
-  }
+export default function App() {
+  const [data, setData] = useState(initial); const [page, setPage] = useState(location.hash.slice(1) || 'home'); const [add, setAdd] = useState(false); const [dataOpen, setDataOpen] = useState(false); const [reset, setReset] = useState(false); const [menu, setMenu] = useState(false);
+  useEffect(() => localStorage.setItem(KEY, JSON.stringify(data)), [data]);
+  useEffect(() => { const update = () => setPage(location.hash.slice(1) || 'home'); addEventListener('hashchange', update); return () => removeEventListener('hashchange', update); }, []);
+  const nav = (target) => { location.hash = target; setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  const addHabit = (habit) => setData((old) => ({ ...old, habits: [...old.habits, { ...habit, id: crypto.randomUUID?.() || String(Date.now()) }] }));
+  const toggle = (id) => setData((old) => ({ ...old, logs: { ...old.logs, [today()]: { ...old.logs[today()], [id]: !done(old.logs[today()]?.[id]) } } }));
+  const removeHabit = (id) => setData((old) => ({ ...old, habits: old.habits.filter((habit) => habit.id !== id), logs: Object.fromEntries(Object.entries(old.logs).map(([date, row]) => { const next = { ...row }; delete next[id]; return [date, next]; })) }));
+  const saveNote = (body) => setData((old) => ({ ...old, journal: body.trim() ? [{ id: today(), date: today(), body: body.trim() }, ...old.journal.filter((note) => note.date !== today())] : old.journal.filter((note) => note.date !== today()) }));
+  const stats = useMemo(() => { const complete = data.habits.filter((habit) => done(data.logs[today()]?.[habit.id])).length; return { complete, rate: data.habits.length ? Math.round((complete / data.habits.length) * 100) : 0, best: data.habits.reduce((max, habit) => Math.max(max, bestStreak(habit.id, data.logs)), 0) }; }, [data]);
+  const exportData = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), ...data }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'habit-studio-data.json'; link.click(); URL.revokeObjectURL(link.href); };
+  const route = { home: 'Home', dashboard: 'Dashboard', insights: 'Insights', journal: 'Journal' };
+  return <div className="app-shell"><header><div className="shell header"><button className="brand" onClick={() => nav('home')}><b>H</b>Habit Studio</button><button className="menu" onClick={() => setMenu(!menu)} aria-label="Toggle navigation">☰</button><nav className={menu ? 'show' : ''}>{Object.entries(route).map(([id, label]) => <button key={id} className={page === id ? 'active' : ''} onClick={() => nav(id)}>{label}</button>)}<button onClick={() => setDataOpen(true)}>Data</button></nav><button className="button dark header-cta" onClick={() => nav('dashboard')}>Start demo →</button></div></header><main>{page === 'home' && <Home nav={nav} stats={stats} />}{page === 'dashboard' && <Dashboard {...data} stats={stats} add={() => setAdd(true)} toggle={toggle} remove={removeHabit} />}{page === 'insights' && <Insights {...data} />}{page === 'journal' && <Journal notes={data.journal} save={saveNote} />}</main><footer><div className="shell"><b>Habit Studio</b><span>Local-first habit tracking, made as a portfolio project.</span><button onClick={() => setDataOpen(true)}>Your data</button></div></footer>{add && <HabitModal close={() => setAdd(false)} save={(habit) => { addHabit(habit); setAdd(false); }} />}{dataOpen && <DataModal close={() => setDataOpen(false)} exportData={exportData} askReset={() => setReset(true)} migrated={data.migrated} />}{reset && <Reset cancel={() => setReset(false)} confirm={() => { setData({ habits: [], logs: {}, journal: [], migrated: false }); setReset(false); setDataOpen(false); nav('home'); }} />}</div>;
 }
 
-export default function App(){
-  const [userEmail, setUserEmail] = useState(getCurrentUser());
-  const [habits, setHabits] = useState([]);
-  const [logs, setLogs] = useState({});
-  const [showAuthModal, setShowAuthModal] = useState(false);
-
-  // Load habits/logs for current user
-  useEffect(() => {
-    const email = getCurrentUser();
-    setUserEmail(email);
-    if (email) {
-      const h = localStorage.getItem(`habits_${email}`);
-      const l = localStorage.getItem(`logs_${email}`);
-      setHabits(h ? JSON.parse(h) : []);
-      setLogs(l ? JSON.parse(l) : {});
-    } else {
-      setHabits([]);
-      setLogs({});
-    }
-  }, [localStorage.getItem('user')]);
-
-  // Save habits/logs for current user
-  useEffect(() => {
-    if (userEmail) {
-      localStorage.setItem(`habits_${userEmail}`, JSON.stringify(habits));
-      localStorage.setItem(`logs_${userEmail}`, JSON.stringify(logs));
-    }
-  }, [habits, logs, userEmail]);
-
-  // Delete a single habit
-  const handleDeleteHabit = (habitId) => {
-    setHabits(prev => prev.filter(h => h.id !== habitId));
-    setLogs(prev => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach(date => {
-        if (updated[date] && updated[date][habitId] !== undefined) {
-          delete updated[date][habitId];
-        }
-      });
-      return updated;
-    });
-  };
-
-  // Delete a whole category
-  const handleDeleteCategory = (category) => {
-    const habitIds = habits.filter(h => (h.category || 'Uncategorized') === category).map(h => h.id);
-    setHabits(prev => prev.filter(h => (h.category || 'Uncategorized') !== category));
-    setLogs(prev => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach(date => {
-        habitIds.forEach(habitId => {
-          if (updated[date] && updated[date][habitId] !== undefined) {
-            delete updated[date][habitId];
-          }
-        });
-      });
-      return updated;
-    });
-  };
-  const [page, setPage] = useState('home');
-  const allowedPages = ['home','dashboard','analytics','database','about-us','about-studio','profile','account'];
-  const allowedPagesExtended = [...allowedPages, 'dashboard-alt'];
-  const pageSafe = allowedPagesExtended.includes(page) ? page : 'home';
-  const today = dateKey();
-  const NEW_COLORS = [
-    '#A7C7E7', 
-    '#B0E0E6', 
-    '#D6F6FF', 
-    '#A8E6CF', 
-    '#7FDBFF',
-    '#B4AEE8', 
-    '#C3B1E1', 
-    '#7FE7DC', 
-    '#B8C6DB', 
-    '#D6C1ED', 
-    '#FFD6E0', 
-    '#FFFACD', 
-    '#F9D5A7', 
-    '#F7B7A3', 
-    '#B5EAD7', 
-    '#E2F0CB', 
-    '#FFDAC1', 
-    '#C7CEEA', 
-    '#FFB7B2', 
-    '#B5B9FF', 
-  ];
-
-  // Define navigate before usage
-  const navigate = (to) => setPage(to);
-
-  // Move addHabit above first usage
-  const addHabit = (habit) => {
-    const newHabit = {...habit, id: Date.now().toString()};
-    setHabits(prev => [...prev, newHabit]);
-  };
-
-
-
-  // Move existingCategories above all usages
-  const existingCategories = habits.reduce((acc, habit) => {
-    if (habit.category && habit.color) {
-      acc[habit.category] = habit.color;
-    }
-    return acc;
-  }, {});
-
-  const deleteHabit = (habitId) => {
-    setHabits(prev => prev.filter(h => h.id !== habitId));
-    setLogs(prev => {
-      const newLogs = {...prev};
-      Object.keys(newLogs).forEach(date => {
-        if (newLogs[date][habitId]) {
-          delete newLogs[date][habitId];
-        }
-      });
-      return newLogs;
-    });
-  };
-
-  const deleteCategory = (category) => {
-    setHabits(prev => prev.filter(h => h.category !== category));
-    const habitsInCategory = habits.filter(h => h.category === category).map(h => h.id);
-    setLogs(prev => {
-      const newLogs = {...prev};
-      Object.keys(newLogs).forEach(date => {
-        habitsInCategory.forEach(habitId => {
-          if (newLogs[date][habitId]) {
-            delete newLogs[date][habitId];
-          }
-        });
-      });
-      return newLogs;
-    });
-  };
-
-  const setHabitValue = (habitId, value) => {
-    setLogs(prev => {
-      const day = {...(prev[today] || {}), [habitId]: value};
-      return {...prev, [today]: day};
-    });
-  };
-
-  const getTodayValue = (habitId) => (logs[today] && (habitId in logs[today]) ? logs[today][habitId] : null);
-
-  const exportCSV = () => {
-    const header = ['date','habitId','habitName','value'];
-    const rows = [header.join(',')];
-    Object.entries(logs).forEach(([date, dayObj])=>{
-      Object.entries(dayObj).forEach(([hid, val])=>{
-        const habit = habits.find(h=>h.id===hid);
-        rows.push([date, hid, `"${habit ? habit.name : ''}"`, String(val)].join(','));
-      });
-    });
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'habit_logs.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  useEffect(() => {
-    const migrated = localStorage.getItem('colorsMigrated');
-    if (!migrated && habits.length > 0) {
-      const categoryColorMap = {};
-      let colorIndex = 0;
-
-      habits.forEach(habit => {
-        if (habit.category && !categoryColorMap[habit.category]) {
-          categoryColorMap[habit.category] = NEW_COLORS[colorIndex % NEW_COLORS.length];
-          colorIndex++;
-        }
-      });
-
-      const updatedHabits = habits.map(habit => {
-        if (habit.category && categoryColorMap[habit.category]) {
-          return { ...habit, color: categoryColorMap[habit.category] };
-        }
-        return habit;
-      });
-
-      setHabits(updatedHabits);
-      localStorage.setItem('colorsMigrated', 'true');
-    }
-  }, []);
-
-  useEffect(() => {
-    const categoryColors = {};
-    let needsUpdate = false;
-   
-    habits.forEach(habit => {
-      if (habit.category && !categoryColors[habit.category]) {
-        categoryColors[habit.category] = habit.color;
-      }
-    });
-    
-    const normalizedHabits = habits.map(habit => {
-      if (habit.category && habit.color !== categoryColors[habit.category]) {
-        needsUpdate = true;
-        return { ...habit, color: categoryColors[habit.category] };
-      }
-      return habit;
-    });
-    
-    if (needsUpdate) {
-      setHabits(normalizedHabits);
-    }
-  }, [habits, setHabits]);
-
-  return (
-    <div className="app-shell">
-      <ProfessionalHeader onNavigate={navigate} currentPage={pageSafe} />
-
-      {pageSafe === 'home' && (
-        <>
-          <Hero onGetStarted={() => {
-            if (userEmail) {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-              navigate('dashboard');
-            } else {
-              setShowAuthModal(true);
-            }
-          }} />
-          <Features />
-          <Onboarding />
-          <Testimonials />
-          <CTA onGetStarted={() => {
-            if (userEmail) {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-              navigate('dashboard');
-            } else {
-              setShowAuthModal(true);
-            }
-          }} />
-        </>
-      )}
-
-      {pageSafe === 'dashboard' && (
-        <DashboardPage
-          onAdd={addHabit}
-          existingCategories={existingCategories}
-          habits={habits}
-          getValue={getTodayValue}
-          setValue={setHabitValue}
-          onDeleteCategory={deleteCategory}
-          onDeleteHabit={deleteHabit}
-        />
-      )}
-
-      {pageSafe === 'analytics' && (
-        <Statistics 
-          habits={habits} 
-          logs={logs} 
-          onToggleTodayHabit={(habitId, value) => setHabitValue(habitId, value)}
-          onDeleteHabit={deleteHabit}
-          onDeleteCategory={deleteCategory}
-        />
-      )}
-
-      {pageSafe === 'database' && <Database habits={habits} logs={logs} />}
-      {pageSafe === 'about-us' && <AboutUs />}
-      {pageSafe === 'about-studio' && <AboutHabitStudio />}
-
-      {pageSafe === 'profile' && <Profile onNavigate={navigate} />}
-      {pageSafe === 'journal' && <Journal />}
-      <Footer />
-
-      <LoginModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)}
-        onLogin={(user) => {
-          setUserEmail(user.email);
-          setShowAuthModal(false);
-          navigate('dashboard');
-        }}
-      />
-
-      <style jsx>{`
-        .app-shell {
-          min-height: 100vh;
-          background: var(--slate-50);
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-          box-sizing: border-box;
-          overflow-x: hidden;
-        }
-
-        .container {
-          max-width: 1280px;
-          margin: 0 auto;
-          padding: 0 1.5rem;
-          width: 100%;
-          box-sizing: border-box;
-        }
-
-        .card {
-          background: white;
-          border-radius: 12px;
-          border: 1px solid var(--slate-200);
-          padding: 2rem;
-          margin-bottom: 2rem;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-
-        @media (max-width: 768px) {
-          .container {
-            padding: 0 1rem;
-          }
-
-          .card {
-            padding: 1.5rem;
-          }
-        }
-
-      `}</style>
-    </div>
-  );
-}
+function Home({ nav, stats }) { return <><section className="hero shell"><div><p className="eyebrow">A calmer way to show up</p><h1>Build a day you’ll want to repeat.</h1><p className="lede">Habit Studio is a focused, local-first space for daily habits, progress, and reflection.</p><div className="actions"><button className="button dark" onClick={() => nav('dashboard')}>Start your demo →</button><button className="link" onClick={() => document.querySelector('#how').scrollIntoView({ behavior: 'smooth' })}>See how it works</button></div><p className="quiet">No account. No cloud. Your data stays in this browser.</p></div><div className="preview"><div className="preview-top"><span>Today</span><em>{stats.rate}% complete</em></div><h2>{stats.complete ? 'You’re making progress.' : 'Your day, in focus.'}</h2>{['Drink water','Move for 20 min','Read 10 pages'].map((name, index) => <div className="sample" key={name}><i className={index === 0 ? 'checked' : ''}>{index === 0 ? '✓' : ''}</i>{name}<small>{index === 0 ? 'Done' : index === 1 ? 'Next' : 'Later'}</small></div>)}<div className="preview-bottom">Longest streak <b>{stats.best} days</b></div></div></section><section className="shell features"><div><p className="eyebrow">Designed for the everyday</p><h2>Simple tools. Real momentum.</h2></div><div className="cards"><Card n="01" title="Track today" text="Add habits, check them off, and keep the list small enough to matter."/><Card n="02" title="See patterns" text="Understand completion, streaks, weekly activity, and each habit’s history."/><Card n="03" title="Reflect briefly" text="Pair progress with a daily journal entry that remains on your device."/></div></section><section id="how" className="how"><div className="shell"><p className="eyebrow">How it works</p><h2>Four quiet steps, every day.</h2><div className="steps">{[['1','Choose a habit','Start with something specific and achievable.'],['2','Check in','Mark progress when you actually do the thing.'],['3','Notice the pattern','Use insights to see what is becoming consistent.'],['4','Write it down','Use a few words to capture the day.']].map(([n,title,text]) => <Card key={n} n={n} title={title} text={text}/>)}</div></div></section><section className="shell privacy"><div><p className="eyebrow">Private by design</p><h2>Local-first, always clear.</h2></div><p>This demo saves habits, check-ins, and reflections in your browser. Export a copy whenever you want, or reset it from the data panel.</p></section></>; }
+function Card({ n, title, text }) { return <article><span>{n}</span><h3>{title}</h3><p>{text}</p></article>; }
+function Dashboard({ habits, logs, stats, add, toggle, remove }) { const groups = habits.reduce((all, habit) => ({ ...all, [habit.category || 'General']: [...(all[habit.category || 'General'] || []), habit] }), {}); return <section className="shell page"><div className="heading"><div><p className="eyebrow">{dayLabel(today())}</p><h1>Today’s habits</h1><p>Small actions, finished deliberately.</p></div><button className="button dark" onClick={add}>+ Add habit</button></div><div className="metrics"><Metric label="Completed" value={`${stats.complete}/${habits.length}`}/><Metric label="Today’s pace" value={`${stats.rate}%`}/><Metric label="Longest streak" value={`${stats.best} days`}/></div>{!habits.length ? <Empty title="Begin with one small habit" action={<button className="button dark" onClick={add}>Add your first habit</button>}>The most useful dashboard is the one you actually return to.</Empty> : <div className="groups">{Object.entries(groups).map(([category, items]) => <section className="group" key={category}><div className="group-head"><h2>{category}</h2><span>{items.filter((habit) => done(logs[today()]?.[habit.id])).length}/{items.length} done</span></div>{items.map((habit) => <div className={`habit ${done(logs[today()]?.[habit.id]) ? 'finished' : ''}`} key={habit.id}><button className="check" onClick={() => toggle(habit.id)} aria-label={`Toggle ${habit.name}`}>{done(logs[today()]?.[habit.id]) ? '✓' : ''}</button><div><b>{habit.name}</b><span>Daily · {streak(habit.id, logs)} day streak</span></div><button className="delete" onClick={() => remove(habit.id)} aria-label={`Delete ${habit.name}`}>⌫</button></div>)}</section>)}</div>}</section>; }
+function Metric({ label, value }) { return <div className="metric"><span>{label}</span><b>{value}</b></div>; }
+function Empty({ title, children, action }) { return <div className="empty"><i>✦</i><h3>{title}</h3><p>{children}</p>{action}</div>; }
+function Insights({ habits, logs }) { const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0,10); }); const weekly = days.map((date) => ({ date, n: habits.filter((habit) => done(logs[date]?.[habit.id])).length })); const high = Math.max(...weekly.map((day) => day.n), 1); return <section className="shell page"><div className="heading"><div><p className="eyebrow">Your local history</p><h1>Insights</h1><p>Patterns from the check-ins you’ve made.</p></div></div>{!habits.length ? <Empty title="Insights appear after your first habit">Add a habit and mark a few days to begin seeing your local progress.</Empty> : <div className="insights"><section className="panel"><div className="panel-head"><h2>This week</h2><span>{weekly.reduce((a,d) => a + d.n, 0)} completions</span></div><div className="bars">{weekly.map((day) => <div key={day.date}><i><b style={{height:`${day.n/high*100}%`}}/></i><small>{new Intl.DateTimeFormat(undefined,{weekday:'short'}).format(new Date(`${day.date}T12:00:00`))}</small></div>)}</div></section><section className="panel"><div className="panel-head"><h2>Habit performance</h2><span>All time</span></div>{habits.map((habit) => { const attempts=Object.values(logs).filter((day)=>habit.id in day), n=attempts.filter((day)=>done(day[habit.id])).length, rate=attempts.length?Math.round(n/attempts.length*100):0; return <div className="performance" key={habit.id}><div><b>{habit.name}</b><span>{bestStreak(habit.id, logs)} day best streak</span></div><b>{rate}%</b><i><em style={{width:`${rate}%`}}/></i></div>; })}</section></div>}</section>; }
+function Journal({ notes, save }) { const current=notes.find((note)=>note.date===today())?.body || ''; const [body,setBody]=useState(current); useEffect(()=>setBody(notes.find((note)=>note.date===today())?.body || ''),[notes]); return <section className="shell page"><div className="heading"><div><p className="eyebrow">{dayLabel(today())}</p><h1>Daily reflection</h1><p>Give the day a few honest words.</p></div></div><div className="journal"><section className="panel editor"><label htmlFor="note">What felt worth noticing today?</label><textarea id="note" rows="10" value={body} onChange={(event)=>setBody(event.target.value)} placeholder="A win, a challenge, or a small observation…"/><div><span>{body.trim().length} characters</span><button className="button dark" onClick={()=>save(body)}>Save reflection</button></div></section><aside><h2>Recent reflections</h2>{notes.length ? notes.slice(0,5).map((note)=><article key={note.id}><span>{dayLabel(note.date)}</span><p>{note.body}</p></article>) : <p className="quiet">Your saved reflections will appear here.</p>}</aside></div></section>; }
+function HabitModal({ close, save }) { const [name,setName]=useState(''),[category,setCategory]=useState('General'); return <Modal close={close}><form onSubmit={(event)=>{event.preventDefault();save({name:name.trim(),category:category.trim()||'General'});}}><p className="eyebrow">New habit</p><h2>Make it specific.</h2><label>Habit name<input autoFocus value={name} onChange={(event)=>setName(event.target.value)} placeholder="e.g. Read 10 pages" required/></label><label>Category<input value={category} onChange={(event)=>setCategory(event.target.value)} placeholder="e.g. Personal"/></label><div className="modal-actions"><button type="button" className="button light" onClick={close}>Cancel</button><button className="button dark">Add habit</button></div></form></Modal>; }
+function DataModal({ close, exportData, askReset, migrated }) { return <Modal close={close}><p className="eyebrow">Your browser data</p><h2>Stored here, under your control.</h2><p className="modal-copy">Habit Studio saves this demo’s habits, check-ins, and reflections only in this browser. No account or data transfer is used.</p>{migrated && <p className="notice">Your earlier local habit data was brought into this workspace.</p>}<div className="modal-actions left"><button className="button dark" onClick={exportData}>Export data</button><button className="button danger" onClick={askReset}>Reset demo</button></div></Modal>; }
+function Reset({ cancel, confirm }) { return <Modal><p className="eyebrow">Reset demo</p><h2>Delete local demo data?</h2><p className="modal-copy">This clears all habits, check-ins, and reflections saved by Habit Studio in this browser. Export first if you want a copy.</p><div className="modal-actions"><button className="button light" onClick={cancel}>Keep my data</button><button className="button danger" onClick={confirm}>Delete everything</button></div></Modal>; }
+function Modal({ children, close }) { return <div className="backdrop" role="dialog" aria-modal="true"><section className="modal">{close && <button className="x" onClick={close} aria-label="Close">×</button>}{children}</section></div>; }
